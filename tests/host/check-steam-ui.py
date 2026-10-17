@@ -89,6 +89,8 @@ final class JITNetworkShortcut {
     func handle(_ url: URL) -> Bool { false }
 }
 enum ResolutionChoices { static let screen = CGSize(width: 390, height: 844) }
+enum MadeiraDock { static var drive: URL { URL(fileURLWithPath: "/fixture") } }
+enum SteamInstallPaths { static func common(drive: URL) -> URL { drive } }
 final class ShortcutRouter { static let shared = ShortcutRouter(); func handle(_ url: URL) {} }
 '''.replace('MODEL_PARTS', '\n'.join(model_parts))
 parts = [
@@ -106,7 +108,7 @@ with tempfile.TemporaryDirectory() as temp:
     source.write_text(stubs + '\n' + '\n'.join(parts))
     subprocess.run(['xcrun', 'swiftc', '-typecheck', '-swift-version', '5',
                     '-target', 'arm64-apple-ios17.0', '-sdk', sdk, str(source),
-                    str(app / 'MadeiraApp.swift'), str(app / 'SteamKeyValues.swift'),
+                    str(app / 'MadeiraApp.swift'), str(app / 'ExternalStorage.swift'), str(app / 'SteamKeyValues.swift'),
                     str(app / 'SwiftSteam/Library/SteamAppInfo.swift'),
                     str(app / 'SwiftSteam/Install/AppManifestWriter.swift')], check=True)
-print('PASS: production DLC/cloud views, settings, model methods and app orientation typecheck with the iOS SDK')
+print('PASS: production DLC/cloud views, settings, model methods, app orientation and external storage typecheck with the iOS SDK')
