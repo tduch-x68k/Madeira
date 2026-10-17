@@ -1073,9 +1073,10 @@ final class SteamOwnedLibrary: ObservableObject {
         downloads[appID] = nil
         guard !installed, let game = game(appID) else { return }
         let apps = Self.steamApps
+        let external = ExternalStorage.activate(repairingLinksIn: SteamInstallPaths.common(drive: Self.drive))
         Task { @MainActor in
             await running?.value
-            SteamInstallFiles.delete(appID: appID, folderName: game.folderName, steamApps: apps)
+            SteamInstallFiles.delete(appID: appID, folderName: game.folderName, steamApps: apps, externalRoot: external)
             SteamLog.event("[steam-depot] cancelled app=\(appID) partial-files-removed=1")
         }
     }
@@ -1109,8 +1110,9 @@ final class SteamOwnedLibrary: ObservableObject {
         // A reinstall evaluates the game's one-time installs again.
         DockInstallers.setRunsNext(game.id, true, prefix: MadeiraDock.prefix)
         let apps = Self.steamApps, id = game.id, folder = game.installDir
+        let external = ExternalStorage.activate(repairingLinksIn: SteamInstallPaths.common(drive: Self.drive))
         Task.detached(priority: .utility) {
-            SteamInstallFiles.delete(appID: id, folderName: folder, steamApps: apps)
+            SteamInstallFiles.delete(appID: id, folderName: folder, steamApps: apps, externalRoot: external)
             await MainActor.run { SteamGamesModel.shared.refresh() }
         }
         SteamLog.event("[steam-depot] uninstalled app=\(id)")
@@ -1136,6 +1138,12 @@ final class SteamOwnedLibrary: ObservableObject {
                 throw SteamError.appInfoNotFound(UInt32(appID))
             }
             try FileManager.default.createDirectory(at: SteamInstallPaths.common(drive: Self.drive), withIntermediateDirectories: true)
+            // A new install goes to the external drive when the person chose that (ExternalStorage.swift): the
+            // game's folder becomes a link to a folder there, and the download writes through it.
+            if ExternalStorage.installsExternally {
+                let name = SteamInstallFiles.safeFolderName(info.installDir.isEmpty ? "app_\(appID)" : info.installDir)
+                try ExternalStorage.prepare(folderName: name, common: SteamInstallPaths.common(drive: Self.drive))
+            }
             let verifying = forceVerify.contains(appID)
             let folder = try await downloader.install(info, steamApps: Self.steamApps, forceVerify: verifying,
                                                       ownedDepots: { [weak self] in try? await self?.fetcher.ownedDepotIDs() }) { [weak self] progress in

@@ -47,9 +47,22 @@ enum SteamInstallFiles {
     /// Removes an app's install: its folder under `common`, its record, its
     /// resume journal and the records of the apps that own its shared depots
     /// (those describe the same folder). Only paths strictly inside
-    /// `steamApps/common` are removed.
-    nonisolated static func delete(appID: Int, folderName: String, steamApps: URL) {
+    /// `steamApps/common` are removed. `externalRoot` is the "Madeira Games" folder
+    /// of an external drive (ExternalStorage.swift): when the install folder is a
+    /// link to a folder directly inside it, that folder and the link are removed too.
+    nonisolated static func delete(appID: Int, folderName: String, steamApps: URL, externalRoot: URL? = nil) {
         let fm = FileManager.default
+        if let externalRoot {
+            let link = steamApps.appendingPathComponent("common", isDirectory: true)
+                .appendingPathComponent(safeFolderName(folderName))
+            if let destination = try? fm.destinationOfSymbolicLink(atPath: link.path) {
+                let target = URL(fileURLWithPath: destination).standardizedFileURL
+                if target.deletingLastPathComponent().path == externalRoot.standardizedFileURL.path {
+                    try? fm.removeItem(at: target)
+                    try? fm.removeItem(at: link)
+                }
+            }
+        }
         let common = steamApps.appendingPathComponent("common", isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
         let folder = common.appendingPathComponent(safeFolderName(folderName)).resolvingSymlinksInPath().standardizedFileURL
         if folder.path.hasPrefix(common.path + "/"), folder.deletingLastPathComponent().path == common.path {
