@@ -53,10 +53,12 @@ for module in ntdll wow64 wow64win; do
     echo "app/Madeira/aarch64-windows/$module.dll" >> outputs/rebuilt-wine-pe.txt
 done
 
-# Update affected 32-bit modules; unchanged farm members come from the local
-# compatibility input, and packaging must let these fresh members win.
-JOBS=3 SKIP_DXMT=1 bash build/wine-i386/build.sh ntdll kernelbase mscoree win32u opengl32 \
-    xinput1_1 xinput1_2 xinput1_3 xinput1_4 xinput9_1_0 xinputuap
+# Build the whole 32-bit farm (kernel32, apisetschema, ...), not just the
+# modules this wave changed. Without them a 32-bit game fails with
+# "cannot map /i386-windows/apisetschema.dll" and "could not load kernel32.dll"
+# unless a local compatibility IPA happens to supply them. Packaging still lets
+# these fresh members win over the overlay.
+JOBS=3 SKIP_DXMT=1 bash build/wine-i386/build.sh
 find app/Madeira/i386-windows -type f ! -name .gitkeep >> outputs/rebuilt-wine-pe.txt
 
 # The cross file resolves @GLOBAL_SOURCE_ROOT@ inside dxmt, not this checkout.
