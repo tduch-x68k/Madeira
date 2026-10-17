@@ -916,6 +916,9 @@ struct SteamGameSheet: View {
                         Text(SteamGameSheet.downloadNote)
                             .font(.footnote).foregroundStyle(.secondary)
                     }
+                    if steam.downloads[appID] == nil && !games.games.contains(where: { $0.id == appID }) {
+                        ExternalStorageSection()
+                    }
                     Section {
                         NavigationLink { SteamDLCView(appID: appID) } label: {
                             Label("Downloadable content (DLC)", systemImage: "square.stack.3d.up")

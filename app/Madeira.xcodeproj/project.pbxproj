@@ -25,6 +25,8 @@
 		A1000711 /* WineMono.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000711 /* WineMono.swift */; };
 		A1000602 /* SteamDownloadBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000602 /* SteamDownloadBackground.swift */; };
 		A1000600 /* SteamInstall.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000600 /* SteamInstall.swift */; };
+		A1000F10 /* ExternalStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000F10 /* ExternalStorage.swift */; };
+		A1000F11 /* ExternalStorageSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000F11 /* ExternalStorageSection.swift */; };
 		A1000609 /* SwiftSteam/Content/ContentDecryptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000609 /* ContentDecryptor.swift */; };
 		A100060A /* SwiftSteam/Content/DepotDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200060A /* DepotDownloader.swift */; };
 		A100062F /* SwiftSteam/Content/SteamFileIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200062F /* SteamFileIndex.swift */; };
@@ -204,6 +206,8 @@
 		A2000711 /* WineMono.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WineMono.swift"; sourceTree = "<group>"; };
 		A2000602 /* SteamDownloadBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SteamDownloadBackground.swift"; sourceTree = "<group>"; };
 		A2000600 /* SteamInstall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SteamInstall.swift"; sourceTree = "<group>"; };
+		A2000F10 /* ExternalStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ExternalStorage.swift"; sourceTree = "<group>"; };
+		A2000F11 /* ExternalStorageSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ExternalStorageSection.swift"; sourceTree = "<group>"; };
 		A2000609 /* ContentDecryptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftSteam/Content/ContentDecryptor.swift"; sourceTree = "<group>"; };
 		A200060A /* DepotDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftSteam/Content/DepotDownloader.swift"; sourceTree = "<group>"; };
 		A200062F /* SteamFileIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SwiftSteam/Content/SteamFileIndex.swift"; sourceTree = "<group>"; };
@@ -432,6 +436,8 @@
 				A2000711 /* WineMono.swift */,
 				A2000602 /* SteamDownloadBackground.swift */,
 				A2000600 /* SteamInstall.swift */,
+				A2000F10 /* ExternalStorage.swift */,
+				A2000F11 /* ExternalStorageSection.swift */,
 				A2000609 /* ContentDecryptor.swift */,
 				A200060A /* DepotDownloader.swift */,
 				A200062F /* SteamFileIndex.swift */,
@@ -773,6 +779,8 @@
 				A1000711 /* WineMono.swift in Sources */,
 				A1000602 /* SteamDownloadBackground.swift in Sources */,
 				A1000600 /* SteamInstall.swift in Sources */,
+				A1000F10 /* ExternalStorage.swift in Sources */,
+				A1000F11 /* ExternalStorageSection.swift in Sources */,
 				A1000609 /* SwiftSteam/Content/ContentDecryptor.swift in Sources */,
 				A100060A /* SwiftSteam/Content/DepotDownloader.swift in Sources */,
 				A100062F /* SwiftSteam/Content/SteamFileIndex.swift in Sources */,

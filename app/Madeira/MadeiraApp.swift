@@ -16,6 +16,9 @@ struct MadeiraApp: App {
         // ml1172: read the screen on the main thread; library entries, whose
         // default Resolution comes from it, are also made on other threads.
         _ = ResolutionChoices.screen
+        // An external drive chosen for game installs (ExternalStorage.swift): open its folder before any
+        // game or download needs it, and repoint the links if the drive came back at another path.
+        ExternalStorage.activate(repairingLinksIn: SteamInstallPaths.common(drive: MadeiraDock.drive))
     }
 
     var body: some Scene {
@@ -43,7 +46,11 @@ struct MadeiraApp: App {
                     MadeiraOrientation.shared.setPlaying(current != nil)
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { MadeiraOrientation.shared.apply() }
+                    if phase == .active {
+                        MadeiraOrientation.shared.apply()
+                        // A drive connected while the app was open.
+                        ExternalStorage.activate(repairingLinksIn: SteamInstallPaths.common(drive: MadeiraDock.drive))
+                    }
                 }
                 // madeira://jit-network/... (the Madeira JIT shortcut returning, JITNetwork.swift),
                 // else madeira://play?exe=... (Home Screen shortcuts, SavesAndShortcuts.swift).

@@ -162,9 +162,14 @@ enum MadeiraDock {
             throw DockError.message("Steam's client files are missing. Download Valve's client components first.")
         }
         var isFolder: ObjCBool = false
+        let installFolder = drive.appendingPathComponent(game.library + "/common/" + game.installDir)
         guard game.installed,
-              FileManager.default.fileExists(atPath: drive.appendingPathComponent(game.library + "/common/" + game.installDir).path, isDirectory: &isFolder),
+              FileManager.default.fileExists(atPath: installFolder.path, isDirectory: &isFolder),
               isFolder.boolValue else {
+            // A link to a folder on an external drive (ExternalStorage.swift) whose drive is not connected.
+            if game.installed, (try? FileManager.default.destinationOfSymbolicLink(atPath: installFolder.path)) != nil {
+                throw DockError.message("This game is installed on an external drive that is not connected. Connect the drive and try again.")
+            }
             throw DockError.message("Steam does not list this game as fully installed.")
         }
     }
