@@ -82,6 +82,7 @@ extern kern_return_t vm_protect(mach_port_t target_task, vm_address_t address,
 #ifdef HAVE_LIBPROCSTAT_H
 # include <libprocstat.h>
 #endif
+#include <sys/mount.h>   /* fstatfs: swap-disk-guard */
 #include <unistd.h>
 #include <dlfcn.h>
 #ifdef WINE_IOS
@@ -20428,6 +20429,7 @@ static unsigned long long ios_swap_skip_bytes[IOS_SWK_REASONS];
 static void ios_swap_tick( int force );
 static unsigned long long ios_swap_footprint_mb( void );   /* after the core: Mach */
 static unsigned long long ios_swap_disk_used( void );      /* after the core: fstat of the file (ml1257) */
+static int ios_swap_space_ok( size_t len );   /* swap-disk-guard, after the core */
 static void ios_swap_cfg( int *mode, int *min_mb );        /* after the core: madeira.cfg swap-mode / swap-min-mb */
 
 static size_t ios_swap_env_size( const char *name, size_t def, unsigned shift, size_t lo, size_t hi )
@@ -20675,6 +20677,7 @@ static int ios_swap_map( void *base, size_t size, int unix_prot )
     /* ml1257: in broad the cap is the disk the sparse file really occupies */
     if (ios_swap_broad && ios_swap_disk_used() >= ios_swap_cap) { ios_swap_disk_refused++; ios_swap_refused++; return IOS_SW_REFUSED; }
     len = he - hs;
+    if (!ios_swap_space_ok( len )) { ios_swap_refused++; return IOS_SW_REFUSED; }   /* swap-disk-guard */
     off = ios_swap_take( len );
     if (off == (uint64_t)-1) { ios_swap_refused++; return IOS_SW_REFUSED; }
     p = mmap( hs, len, unix_prot, MAP_FIXED | MAP_SHARED, ios_swap_fd, (off_t)off );
@@ -21026,6 +21029,7 @@ static uint64_t ios_swap_image_take( size_t len )
     uint64_t off;
     if (ios_swap_fd < 0 || !len || (len & host_page_mask) || ios_swap_n >= 16384) return (uint64_t)-1;
     if (ios_swap_broad && ios_swap_disk_used() >= ios_swap_cap) { ios_swap_disk_refused++; ios_swap_img_refused++; return (uint64_t)-1; }
+    if (!ios_swap_space_ok( len )) { ios_swap_img_refused++; return (uint64_t)-1; }   /* swap-disk-guard */
     off = ios_swap_take( len );
     if (off == (uint64_t)-1) ios_swap_img_refused++;
     return off;
@@ -21077,6 +21081,35 @@ static unsigned long long ios_swap_disk_used( void )
     struct stat st;
     if (ios_swap_fd < 0 || fstat( ios_swap_fd, &st )) return 0;
     return (unsigned long long)st.st_blocks * 512;
+}
+
+/* swap-disk-guard: the swap file is sparse (ftruncate to the cap, no blocks reserved), so
+ * its pages claim disk only when the kernel flushes them. On an iPad with little free
+ * storage that claim can FAIL, and iPadOS 27 then panics the whole device in its file
+ * write path ("Failed to restore dirty state on failure @vfs_cluster.c", seen with
+ * 2.7 GB backed and the disk nearly full). Before another extent is backed, check that
+ * the volume still has room for everything backed but not yet on disk, this extent, and
+ * a reserve (MADEIRA_SWAP_DISK_RESERVE_MB, default 1024); otherwise the range stays
+ * anonymous memory, which a low-memory kill handles without taking the device down. */
+static unsigned long long ios_swap_space_refused;
+static int ios_swap_space_ok( size_t len )
+{
+    struct statfs sf;
+    unsigned long long avail, used, pending, reserve = 1024ull << 20;
+    const char *e = getenv( "MADEIRA_SWAP_DISK_RESERVE_MB" );
+    if (ios_swap_fd < 0) return 1;
+    if (e && *e) reserve = (unsigned long long)strtoull( e, NULL, 10 ) << 20;
+    if (!reserve) return 1;
+    if (fstatfs( ios_swap_fd, &sf )) return 1;
+    avail = (unsigned long long)sf.f_bavail * (unsigned long long)sf.f_bsize;
+    used = ios_swap_disk_used();
+    pending = ios_swap_bytes > used ? ios_swap_bytes - used : 0;
+    if (avail >= pending + len + reserve) return 1;
+    if (ios_swap_space_refused++ < 6 || !(ios_swap_space_refused & (ios_swap_space_refused - 1)))
+        dprintf( 2, "[swap] swap-disk-guard: %llu MB free on the volume, %llu MB already backed but not on disk, this range %zu MB, reserve %llu MB -- "
+                    "not backed, the range stays in memory (%llu so far; free storage or lower swap-mb)\n",
+                 avail >> 20, pending >> 20, len >> 20, reserve >> 20, ios_swap_space_refused );
+    return 0;
 }
 
 /* ml1257: madeira.cfg swap-mode = 2 selects broad coverage (when
