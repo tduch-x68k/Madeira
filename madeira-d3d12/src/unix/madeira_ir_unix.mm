@@ -1152,11 +1152,57 @@ done:
     return status;
 }
 
+/* Diagnostic: madeira.cfg probe-uv = 1. A DXBC 5.0 pixel shader that does
+ * `sample r, v1.xy, t0, s0` (the shape of Ghost of Tsushima's final blit) gets
+ * that one instruction replaced by `mov r, v1` (padded with nops, so the
+ * length is unchanged). The screen then shows the interpolated texture
+ * coordinate as colour: R = u, G = v, B = u. A smooth gradient means the UV
+ * arrives; one flat colour means it does not. Returns a patched copy (never
+ * freed: a handful of shaders at most) or NULL when nothing matched. */
+static unsigned char *mad_probe_uv(const unsigned char *bc, size_t len)
+{
+    static int en = -1;
+    uint32_t nch, k, hits = 0;
+    unsigned char *c;
+    if (en < 0) en = madeira_cfg_int("probe-uv", 0) ? 1 : 0;
+    if (!en || len < 40 || memcmp(bc, "DXBC", 4) != 0) return NULL;
+    memcpy(&nch, bc + 28, 4);
+    if (nch > 32 || 32 + (size_t)nch * 4 > len) return NULL;
+    c = (unsigned char *)malloc(len);
+    if (!c) return NULL;
+    memcpy(c, bc, len);
+    for (k = 0; k < nch; k++) {
+        uint32_t off, sz, w0, i, nw;
+        uint32_t *w;
+        memcpy(&off, c + 32 + (size_t)k * 4, 4);
+        if ((size_t)off + 8 > len || memcmp(c + off, "SHDR", 4) != 0) continue;
+        memcpy(&sz, c + off + 4, 4);
+        if ((size_t)off + 8 + sz > len || (off & 3) || sz < 16) continue;
+        w = (uint32_t *)(c + off + 8); nw = sz / 4; w0 = w[0];
+        if ((w0 >> 16) != 0) continue;                       /* pixel shaders only */
+        for (i = 2; i < nw; ) {
+            uint32_t op = w[i] & 0x7ff, ln = (w[i] >> 24) & 0x7f;
+            if (op == 0x35) ln = i + 1 < nw ? w[i + 1] : 0;      /* customdata: length in the next word */
+            if (!ln || i + ln > nw) break;
+            if (op == 0x45 && ln == 9 && w[i + 3] == 0x101046 && w[i + 4] == 1) {   /* sample dst, v1.xyxx, t, s */
+                w[i] = 0x05000036;                                /* mov, 5 tokens */
+                w[i + 5] = w[i + 6] = w[i + 7] = w[i + 8] = 0x0100003a;   /* nop */
+                hits++;
+            }
+            i += ln;
+        }
+    }
+    if (!hits) { free(c); return NULL; }
+    dprintf(2, "[madeira-ir] probe-uv: %u sample instruction(s) of a %zu-byte pixel shader now output the UV\n", hits, len);
+    return c;
+}
+
 static int mad_airconv_convert(struct madeira_ir_convert_args *a,
                                const unsigned char *bc, size_t bclen)
 {
     if (a->tess_stage) return mad_airconv_convert_tess(a, bc, bclen);   /* ml1083 */
     if (a->gs_stage) return mad_airconv_convert_gs(a, bc, bclen);       /* ml1147 */
+    { unsigned char *probe = mad_probe_uv(bc, bclen); if (probe) bc = probe; }
     struct MTL_SHADER_REFLECTION refl;
     sm50_shader_t shader = NULL;
     sm50_error_t err = NULL;
