@@ -1162,13 +1162,15 @@ done:
  *                 as t0 is the right one; a flat colour means the bound texture
  *                 itself is not the image. (Sampler broken = mode 2 shows the
  *                 picture while the normal blit shows one colour.)
+ *   probe-uv = 3: resinfo on t0, shown as colour: R = width/2048, G = height/2048,
+ *                 B = depth/16 (800x600 = 0.39 / 0.29; 1x1 = black)
  * Returns a patched copy (never freed: a handful of shaders at most) or NULL. */
 static unsigned char *mad_probe_uv(const unsigned char *bc, size_t len)
 {
     static int mode = -1;
     uint32_t nch, k, hits = 0;
     unsigned char *c;
-    if (mode < 0) { int m = madeira_cfg_int("probe-uv", 0); mode = (m == 1 || m == 2) ? m : 0; }
+    if (mode < 0) { int m = madeira_cfg_int("probe-uv", 0); mode = (m >= 1 && m <= 3) ? m : 0; }
     if (!mode || len < 40 || memcmp(bc, "DXBC", 4) != 0) return NULL;
     memcpy(&nch, bc + 28, 4);
     if (nch > 32 || 32 + (size_t)nch * 4 > len) return NULL;
@@ -1194,12 +1196,23 @@ static unsigned char *mad_probe_uv(const unsigned char *bc, size_t len)
                     w[i] = 0x05000036;                            /* mov, 5 tokens */
                     w[i + 5] = w[i + 6] = w[i + 7] = w[i + 8] = 0x0100003a;   /* nop */
                     hits++;
-                } else if (temps_at && i + 27 <= nw &&
+                } else if ((mode == 2 || mode == 3) && temps_at && i + 27 <= nw &&
                            (w[i + 9] & 0x7ff) == 0x2f && ((w[i + 9] >> 24) & 0x7f) == 5 &&    /* log */
                            (w[i + 14] & 0x7ff) == 0x38 && ((w[i + 14] >> 24) & 0x7f) == 8 &&  /* mul */
                            (w[i + 22] & 0x7ff) == 0x19 && ((w[i + 22] >> 24) & 0x7f) == 5) { /* exp */
                     uint32_t dst0 = w[i + 1], dst1 = w[i + 2], j = i, n;
                     w[temps_at + 1] = w[temps_at + 1] < 2 ? 2 : w[temps_at + 1];   /* r1 for the address */
+                    if (mode == 3) {
+                        /* resinfo dst, l(0), t0 ; mul dst, dst, l(1/2048, 1/2048, 1/16, 1): the colour is
+                         * R = width/2048, G = height/2048, B = depth/16, A = mip count (clamps to 1) */
+                        w[j++] = 0x0700003d; w[j++] = dst0; w[j++] = dst1; w[j++] = 0x4001; w[j++] = 0; w[j++] = 0x107e46; w[j++] = 0;
+                        w[j++] = 0x0a000038; w[j++] = dst0; w[j++] = dst1; w[j++] = 0x100e46; w[j++] = dst1;
+                        w[j++] = 0x4002; w[j++] = 0x3a000000; w[j++] = 0x3a000000; w[j++] = 0x3d800000; w[j++] = 0x3f800000;
+                        for (n = j; n < i + 27; n++) w[n] = 0x0100003a;
+                        hits++;
+                        i += ln;
+                        continue;
+                    }
                     /* mul r1.xyzw, v1.xyxx, l(800, 600, 0, 0) */
                     w[j++] = 0x0a000038; w[j++] = 0x1000f2; w[j++] = 1; w[j++] = 0x101046; w[j++] = 1;
                     w[j++] = 0x4002; w[j++] = 0x44480000; w[j++] = 0x44160000; w[j++] = 0; w[j++] = 0;
