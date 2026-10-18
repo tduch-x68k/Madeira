@@ -2871,6 +2871,15 @@ static void mad_capture_drain(struct mad_device *d, UINT64 frame, int final) {
         struct mad_capbuf *c = &g_capbufs[i];
         int thumb = !strcmp(c->kind, "rt") || !strcmp(c->kind, "depth") || !strcmp(c->kind, "stencil") || !strcmp(c->kind, "uav");
         if (thumb) mad_sheet_add(c, frame);
+        /* Small constant / vertex buffers read by a targeted draw: log the first
+         * 16 floats (the raw files stay on the device). Answers "what did the
+         * shader actually get" without fetching the files. */
+        if (!thumb && c->cpu && (!strcmp(c->kind, "cb") || !strcmp(c->kind, "vb"))) {
+            char fl[512]; size_t n = 0; unsigned k, cnt = (unsigned)(c->bytes / 4); const float *f = (const float *)c->cpu;
+            if (cnt > 16) cnt = 16;
+            for (k = 0; k < cnt && n < sizeof fl - 24; k++) n += (size_t)snprintf(fl + n, sizeof fl - n, "%s%g", k ? " " : "", (double)f[k]);
+            d3d12_log("[capture-floats] enc#%u %s%u first %u floats: %s\n", c->enc, c->kind, c->idx, cnt, fl);
+        }
         if (!thumb || g_cap_raw) {
             struct madeira_ctl_args a;
             memset(&a, 0, sizeof a);
