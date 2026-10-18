@@ -1152,27 +1152,31 @@ done:
     return status;
 }
 
-/* Diagnostic: madeira.cfg probe-uv = 1. A DXBC 5.0 pixel shader that does
- * `sample r, v1.xy, t0, s0` (the shape of Ghost of Tsushima's final blit) gets
- * that one instruction replaced by `mov r, v1` (padded with nops, so the
- * length is unchanged). The screen then shows the interpolated texture
- * coordinate as colour: R = u, G = v, B = u. A smooth gradient means the UV
- * arrives; one flat colour means it does not. Returns a patched copy (never
- * freed: a handful of shaders at most) or NULL when nothing matched. */
+/* Diagnostic: madeira.cfg probe-uv, for the DXBC 5.0 pixel shader of Ghost of
+ * Tsushima's final blit (`sample r0, v1.xy, t0, s0`, then pow/scale).
+ *   probe-uv = 1: that sample becomes `mov r0, v1` (length padded with nops).
+ *                 The screen shows R = u, G = v, B = u: does the UV arrive?
+ *   probe-uv = 2: the sample and the pow after it become a TEXEL FETCH,
+ *                 ld r0, int2(uv * (800, 600)), t0 -- no sampler at all. The
+ *                 screen then shows the 800x600 image 1:1 if the texture bound
+ *                 as t0 is the right one; a flat colour means the bound texture
+ *                 itself is not the image. (Sampler broken = mode 2 shows the
+ *                 picture while the normal blit shows one colour.)
+ * Returns a patched copy (never freed: a handful of shaders at most) or NULL. */
 static unsigned char *mad_probe_uv(const unsigned char *bc, size_t len)
 {
-    static int en = -1;
+    static int mode = -1;
     uint32_t nch, k, hits = 0;
     unsigned char *c;
-    if (en < 0) en = madeira_cfg_int("probe-uv", 0) ? 1 : 0;
-    if (!en || len < 40 || memcmp(bc, "DXBC", 4) != 0) return NULL;
+    if (mode < 0) { int m = madeira_cfg_int("probe-uv", 0); mode = (m == 1 || m == 2) ? m : 0; }
+    if (!mode || len < 40 || memcmp(bc, "DXBC", 4) != 0) return NULL;
     memcpy(&nch, bc + 28, 4);
     if (nch > 32 || 32 + (size_t)nch * 4 > len) return NULL;
     c = (unsigned char *)malloc(len);
     if (!c) return NULL;
     memcpy(c, bc, len);
     for (k = 0; k < nch; k++) {
-        uint32_t off, sz, w0, i, nw;
+        uint32_t off, sz, w0, i, nw, temps_at = 0;
         uint32_t *w;
         memcpy(&off, c + 32 + (size_t)k * 4, 4);
         if ((size_t)off + 8 > len || memcmp(c + off, "SHDR", 4) != 0) continue;
@@ -1184,16 +1188,34 @@ static unsigned char *mad_probe_uv(const unsigned char *bc, size_t len)
             uint32_t op = w[i] & 0x7ff, ln = (w[i] >> 24) & 0x7f;
             if (op == 0x35) ln = i + 1 < nw ? w[i + 1] : 0;      /* customdata: length in the next word */
             if (!ln || i + ln > nw) break;
+            if (op == 0x68 && ln == 2) temps_at = i;             /* dcl_temps */
             if (op == 0x45 && ln == 9 && w[i + 3] == 0x101046 && w[i + 4] == 1) {   /* sample dst, v1.xyxx, t, s */
-                w[i] = 0x05000036;                                /* mov, 5 tokens */
-                w[i + 5] = w[i + 6] = w[i + 7] = w[i + 8] = 0x0100003a;   /* nop */
-                hits++;
+                if (mode == 1) {
+                    w[i] = 0x05000036;                            /* mov, 5 tokens */
+                    w[i + 5] = w[i + 6] = w[i + 7] = w[i + 8] = 0x0100003a;   /* nop */
+                    hits++;
+                } else if (temps_at && i + 27 <= nw &&
+                           (w[i + 9] & 0x7ff) == 0x2f && ((w[i + 9] >> 24) & 0x7f) == 5 &&    /* log */
+                           (w[i + 14] & 0x7ff) == 0x38 && ((w[i + 14] >> 24) & 0x7f) == 8 &&  /* mul */
+                           (w[i + 22] & 0x7ff) == 0x19 && ((w[i + 22] >> 24) & 0x7f) == 5) { /* exp */
+                    uint32_t dst0 = w[i + 1], dst1 = w[i + 2], j = i, n;
+                    w[temps_at + 1] = w[temps_at + 1] < 2 ? 2 : w[temps_at + 1];   /* r1 for the address */
+                    /* mul r1.xyzw, v1.xyxx, l(800, 600, 0, 0) */
+                    w[j++] = 0x0a000038; w[j++] = 0x1000f2; w[j++] = 1; w[j++] = 0x101046; w[j++] = 1;
+                    w[j++] = 0x4002; w[j++] = 0x44480000; w[j++] = 0x44160000; w[j++] = 0; w[j++] = 0;
+                    /* ftoi r1.xyzw, r1.xyzw */
+                    w[j++] = 0x0500001b; w[j++] = 0x1000f2; w[j++] = 1; w[j++] = 0x100e46; w[j++] = 1;
+                    /* ld dst, r1.xyzw, t0.xyzw (no sampler) */
+                    w[j++] = 0x0700002d; w[j++] = dst0; w[j++] = dst1; w[j++] = 0x100e46; w[j++] = 1; w[j++] = 0x107e46; w[j++] = 0;
+                    for (n = j; n < i + 27; n++) w[n] = 0x0100003a;           /* nop over the rest of sample/log/mul/exp */
+                    hits++;
+                }
             }
             i += ln;
         }
     }
     if (!hits) { free(c); return NULL; }
-    dprintf(2, "[madeira-ir] probe-uv: %u sample instruction(s) of a %zu-byte pixel shader now output the UV\n", hits, len);
+    dprintf(2, "[madeira-ir] probe-uv = %d: %u sample instruction(s) of a %zu-byte pixel shader replaced\n", mode, hits, len);
     return c;
 }
 
