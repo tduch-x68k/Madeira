@@ -14732,6 +14732,24 @@ static void STDMETHODCALLTYPE device_CreateShaderResourceView(ID3D12Device *This
             min_lod = 0.0f;   /* absorbed by the view */
         }
     }
+    /* srv-base-view (diagnostic / fix attempt): a 2D colour SRV that covers the whole texture
+     * but re-types it (sRGB <-> linear) or re-swizzles it gets the BASE texture's id instead
+     * of a Metal texture view. Ghost of Tsushima's final blit reads its 800x600 render target
+     * through such a view (format 70 -> 71) and gets black on an M1 (Apple7) iPad, where the
+     * same view reads fine on an A19. The only visible difference is sRGB decoding. */
+    {
+        static int base_view = -1;
+        if (base_view < 0) base_view = mad_cfg_int_pe("srv-base-view", 0) ? 1 : 0;
+        if (base_view && desc && view_id != r->gpu_resource_id && !r->is_depth && r->samples <= 1 &&
+            (desc->ViewDimension == D3D12_SRV_DIMENSION_TEXTURE2D || desc->ViewDimension == D3D12_SRV_DIMENSION_TEXTURE2DARRAY) &&
+            r->tex_mips <= 1 && r->tex_layers <= 1) {
+            static int said;
+            if (said++ < 8)
+                d3d12_log("[madeira-d3d12] srv-base-view: %ux%u %s read through its own texture instead of a re-typed/re-swizzled view (swz %08x)\n",
+                          r->width, r->height, r->name, swz_used);
+            view_id = r->gpu_resource_id;
+        }
+    }
     memcpy(&lod_bits, &min_lod, sizeof lod_bits);
     e->gpu_va = 0;
     e->texture_view_id = view_id;
