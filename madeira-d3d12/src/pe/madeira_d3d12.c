@@ -6191,6 +6191,42 @@ static struct mad_resource *mad_texture_of_view(struct mad_device *d, UINT64 id,
  *   typed buffer : texture_view_id != 0, metadata bit 63 SET (mad_typed_buffer_view) */
 #define MAD_DESC_TYPEDBUF (1ull << 63)
 
+/* dxbc-2d-views: every 2D texture here is allocated and viewed as a 2D ARRAY (ml932,
+ * for the Metal shader converter), but a DXBC (DXMT) shader declares `Texture2D` as a
+ * plain texture2d and only a `Texture2DArray` as texture2d_array -- its range carries
+ * MADEIRA_IR_AIR_F_TEXTURE_ARRAY when it is one. Reading an array texture through a
+ * plain-2D declaration is undefined: an A19 tolerates it, an M1 (Apple7) returns zeros
+ * (Ghost of Tsushima's final blit read black from a right-sized 800x600 target). So a
+ * plain-2D range gets a single-slice 2D view of the same level and slice instead.
+ * madeira.cfg dxbc-2d-views = 1 / 0 forces it; the default is on without Apple9. */
+static UINT64 mad_texture_view_id(struct mad_device *d, struct mad_resource *r, enum WMTTextureType want,
+                                  UINT lvl0, UINT nlvl, UINT sl0, UINT nsl, enum WMTPixelFormat pf, UINT swz);
+static int g_dev_has_apple9;   /* defined below with its initial -1; read after the device exists */
+static int g_plain2d = -1;
+static UINT64 mad_air_plain2d(struct mad_device *d, UINT64 view_id) {
+    int xv = -1; struct mad_resource *r; UINT lvl0 = 0, nlvl = ~0u, sl0 = 0, nsl = 1, pf = 0, swz = 0; UINT64 id;
+    static LONG said;
+    if (g_plain2d < 0) {
+        long long v = mad_cfg_int_pe("dxbc-2d-views", -1);
+        g_plain2d = v >= 0 ? (v ? 1 : 0) : (g_dev_has_apple9 == 0 ? 1 : 0);
+        d3d12_log("[madeira-d3d12] dxbc-2d-views %s: plain-2D DXBC texture ranges are bound to a 2D view of the array texture%s\n",
+                  g_plain2d ? "ON" : "off", v >= 0 ? " (madeira.cfg)" : (g_plain2d ? " (no Apple9 GPU)" : ""));
+    }
+    if (!g_plain2d || !view_id) return view_id;
+    r = mad_texture_of_view(d, view_id, &xv);
+    if (!r || !r->texture || r->tex_type != WMTTextureType2DArray || r->samples > 1) return view_id;
+    if (xv >= 0) {
+        if (r->xview[xv].type != (UINT)WMTTextureType2DArray) return view_id;
+        lvl0 = r->xview[xv].lvl0; nlvl = r->xview[xv].nlvl; sl0 = r->xview[xv].sl0; nsl = r->xview[xv].nsl;
+        pf = r->xview[xv].pf; swz = r->xview[xv].swz;
+    } else nsl = r->tex_layers;
+    if (nsl != 1) return view_id;
+    id = mad_texture_view_id(d, r, WMTTextureType2D, lvl0, nlvl, sl0, 1, (enum WMTPixelFormat)pf, swz);
+    if (id && id != view_id && InterlockedIncrement(&said) <= 6)
+        d3d12_log("[madeira-d3d12] dxbc-2d-views: %ux%u %s bound to a plain 2D texture view (level %u, slice %u)\n", r->width, r->height, r->name, lvl0, sl0);
+    return id ? id : view_id;
+}
+
 /* The view's array length, which the backend packs above the min LOD clamp.
  * mad_texture_of_view already reverses a view id to its resource and view
  * index; the view records how many slices it spans. */
@@ -7347,8 +7383,9 @@ static int mad_air_build_tables_ex_body(struct mad_exec *e, const struct mad_roo
                 tab[off + 0] = de.texture_view_id;
                 tab[off + 1] = ((UINT64)count << 32) | (UINT64)first;
             } else {
-                tab[off + 0] = de.texture_view_id;
-                tab[off + 1] = ((UINT64)mad_air_array_len(d, de.texture_view_id) << 32)
+                UINT64 tvid = (rg->flags & MADEIRA_IR_AIR_F_TEXTURE_ARRAY) ? de.texture_view_id : mad_air_plain2d(d, de.texture_view_id);
+                tab[off + 0] = tvid;
+                tab[off + 1] = ((UINT64)mad_air_array_len(d, tvid) << 32)
                              | (de.metadata & 0xffffffffull);     /* min LOD clamp */
             }
         } else {
@@ -15284,6 +15321,11 @@ static int mad_sc_init(void) {
                 size_t l = strlen(g_sc_rt);
                 snprintf(g_sc_rt + l, sizeof g_sc_rt - l, ", dxbc-spaces 1");
             }
+            /* probe-uv rewrites a pixel shader before conversion (madeira_ir_unix.mm), so
+             * what it produced must not answer with it off: a probe shader served from
+             * this cache kept the screen on the probe colour after the switch was gone. */
+            { long long pu = mad_cfg_int_pe("probe-uv", 0);
+              if (pu >= 1 && pu <= 3) { size_t l = strlen(g_sc_rt); snprintf(g_sc_rt + l, sizeof g_sc_rt - l, ", probe-uv %d", (int)pu); } }
             /* The build directory is the converter's identity alone -- this DLL's
              * stamp and the app image the converter's unix half is linked into
              * (MADEIRA_APP_IMAGE_UUID, from the bridge) -- and only other builds'
