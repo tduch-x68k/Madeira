@@ -15284,6 +15284,11 @@ static int mad_sc_init(void) {
                 size_t l = strlen(g_sc_rt);
                 snprintf(g_sc_rt + l, sizeof g_sc_rt - l, ", dxbc-spaces 1");
             }
+            /* probe-uv rewrites a pixel shader before conversion (madeira_ir_unix.mm), so
+             * what it produced must not answer with it off: a probe shader served from
+             * this cache kept the screen on the probe colour after the switch was gone. */
+            { long long pu = mad_cfg_int_pe("probe-uv", 0);
+              if (pu >= 1 && pu <= 3) { size_t l = strlen(g_sc_rt); snprintf(g_sc_rt + l, sizeof g_sc_rt - l, ", probe-uv %d", (int)pu); } }
             /* The build directory is the converter's identity alone -- this DLL's
              * stamp and the app image the converter's unix half is linked into
              * (MADEIRA_APP_IMAGE_UUID, from the bridge) -- and only other builds'
