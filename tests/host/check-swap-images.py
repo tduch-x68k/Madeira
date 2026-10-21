@@ -156,6 +156,7 @@ static unsigned long long ios_swap_footprint_mb( void ) { return 1234; }
 static int cfg_mode = 1;
 static void ios_swap_cfg( int *mode, int *min_mb ) { *mode = cfg_mode; *min_mb = 0; }
 static unsigned long long ios_swap_disk_used( void ) { return 0; }
+static int ios_swap_space_ok( size_t len ) { (void)len; return 1; }
 /* the take and the map must run with the lock held: wrap the core's versions */
 #define ios_swap_image_take real_ios_swap_image_take
 #define ios_swap_image_map real_ios_swap_image_map
