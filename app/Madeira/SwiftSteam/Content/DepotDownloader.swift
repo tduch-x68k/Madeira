@@ -397,14 +397,25 @@ final class DepotDownloader {
         // DLC can overlay a base-game path. A journal from the base depot
         // cannot verify the DLC's bytes. Reject ambiguous overlays before any
         // files are resized; silently writing both could corrupt the install.
-        var fileOwners: [String: UInt32] = [:]
+        // A file two depots both carry with the same size and the same chunk
+        // hashes is the same bytes: the later depot's copy is skipped (the
+        // `duplicates` set, depot << 32 | file index) and one copy is written.
+        // Only a file whose contents differ between depots is refused.
+        var fileOwners: [String: (depot: UInt32, size: UInt64, chunks: [Data])] = [:]
+        var duplicates = Set<UInt64>()
         for plan in plans {
-            for file in plan.manifest.files where !file.isDirectory && file.flags & 0x200 == 0 {
+            for (fileIndex, file) in plan.manifest.files.enumerated() where !file.isDirectory && file.flags & 0x200 == 0 {
                 guard let path = SteamInstallFiles.safeRelativePath(file.filename, folded: &folded) else { continue }
-                if let owner = fileOwners[path.lowercased()], owner != plan.depotID {
-                    throw SteamError.chunkDownloadFailed("Two depots contain the same file. Install this content with the Steam client; Madeira has left the game files unchanged.")
+                let signature = file.chunks.map { $0.sha }
+                if let owner = fileOwners[path.lowercased()], owner.depot != plan.depotID {
+                    if owner.size == file.size && owner.chunks == signature {
+                        duplicates.insert(UInt64(plan.depotID) << 32 | UInt64(fileIndex))
+                        SteamLog.event("[steam-depot] identical file in depots \(owner.depot) and \(plan.depotID): written once")
+                        continue
+                    }
+                    throw SteamError.chunkDownloadFailed("Depots \(owner.depot) and \(plan.depotID) both contain \(path) with different contents. Install this content with the Steam client; Madeira has left the game files unchanged.")
                 }
-                fileOwners[path.lowercased()] = plan.depotID
+                fileOwners[path.lowercased()] = (plan.depotID, file.size, signature)
             }
         }
         let previous = forceVerify ? SteamFileIndex() : SteamFileIndex.load(catalogURL)
@@ -423,6 +434,10 @@ final class DepotDownloader {
             var pending: [WorkItem] = []
             paths.reserveCapacity(plan.manifest.files.count)
             for (fileIndex, file) in plan.manifest.files.enumerated() {
+                // An identical copy another depot already writes: nothing to do here.
+                if duplicates.contains(UInt64(plan.depotID) << 32 | UInt64(fileIndex)) {
+                    paths.append(""); existing.append(false); continue
+                }
                 // Symlinks (flag 0x200) have no Windows meaning here; skip them.
                 guard file.flags & 0x200 == 0,
                       let relative = SteamInstallFiles.safeRelativePath(file.filename, folded: &folded) else {
