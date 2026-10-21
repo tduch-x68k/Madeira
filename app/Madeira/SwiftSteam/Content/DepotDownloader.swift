@@ -413,6 +413,7 @@ final class DepotDownloader {
                         SteamLog.event("[steam-depot] identical file in depots \(owner.depot) and \(plan.depotID): written once")
                         continue
                     }
+                    SteamLog.event("[steam-depot] conflict file=\(path) depots=\(owner.depot),\(plan.depotID) sizes=\(owner.size),\(file.size) chunks=\(owner.chunks.count),\(signature.count)")
                     throw SteamError.chunkDownloadFailed("Depots \(owner.depot) and \(plan.depotID) both contain \(path) with different contents. Install this content with the Steam client; Madeira has left the game files unchanged.")
                 }
                 fileOwners[path.lowercased()] = (plan.depotID, file.size, signature)
