@@ -1194,7 +1194,9 @@ final class SteamOwnedLibrary: ObservableObject {
         case SteamError.decompressionFailed: return "decompress"
         case SteamError.chunkDecodeFailed(let format): return "decode-\(format)"
         case SteamError.manifestFetchFailed: return "manifest"
-        case SteamError.chunkDownloadFailed: return "chunk"
+        // The messages thrown for this case carry no credentials (errno, an HTTP status, a game file path,
+        // depot ids), and the bare word "chunk" hid which of a dozen failures it was.
+        case SteamError.chunkDownloadFailed(let why): return "chunk (\(String(why.prefix(200))))"
         case let url as URLError: return "url-\(url.code.rawValue)"
         default: return String(describing: type(of: error))
         }
