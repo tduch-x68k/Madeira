@@ -867,23 +867,38 @@ final class LibraryModel: ObservableObject {
 
     /// What an entry can start: an executable, or (ml1163) a batch file run through cmd.exe.
     static let programExtensions: Set<String> = ["exe", "bat", "cmd"]
+    /// The path of `url` relative to drive_c, or nil when it is not inside it. A game
+    /// installed on an external drive is a symbolic link inside drive_c (ExternalStorage),
+    /// so the path is judged where it is listed, not where the link leads; a link leading
+    /// elsewhere counts only when it leads into a "Madeira Games" folder.
+    static func driveRelativePath(_ url: URL) -> String? {
+        var listed = url.standardizedFileURL.path
+        if listed.hasPrefix("/private/var/") { listed = String(listed.dropFirst("/private".count)) }
+        var root = drive.path
+        if root.hasPrefix("/private/var/") { root = String(root.dropFirst("/private".count)) }
+        let resolved = url.resolvingSymlinksInPath().path
+        if resolved.hasPrefix(drive.path + "/") { return String(resolved.dropFirst(drive.path.count + 1)) }
+        guard listed.hasPrefix(root + "/"), resolved.split(separator: "/").contains(Substring(ExternalStorage.gamesFolderName)) else { return nil }
+        return String(listed.dropFirst(root.count + 1))
+    }
+    static func isInDrive(_ url: URL) -> Bool { driveRelativePath(url) != nil }
     static func executable(_ relative: String) throws -> URL {
-        let url = drive.appendingPathComponent(relative).resolvingSymlinksInPath().standardizedFileURL
-        guard url.path.hasPrefix(drive.path + "/"), programExtensions.contains(url.pathExtension.lowercased()),
+        let url = drive.appendingPathComponent(relative).standardizedFileURL
+        guard isInDrive(url), programExtensions.contains(url.pathExtension.lowercased()),
               FileManager.default.fileExists(atPath: url.path) else {
             throw LibraryError.message("Choose an executable (.exe, .bat or .cmd) inside drive_c.")
         }
         return url
     }
     static func inspect(_ url: URL) throws -> LibraryEntry {
-        guard url.resolvingSymlinksInPath().path.hasPrefix(drive.path + "/") else {
+        guard isInDrive(url) else {
             throw LibraryError.message("The executable must be inside drive_c.")
         }
         if ["bat", "cmd"].contains(url.pathExtension.lowercased()) {
             // ml1163: a batch file has no PE header. Like every entry it starts
             // directly by default, as upstream starts every game; the details page
             // warns that Wine then stops when cmd.exe, its first process, exits.
-            let relative = String(url.resolvingSymlinksInPath().path.dropFirst(drive.path.count + 1))
+            let relative = driveRelativePath(url) ?? ""
             return LibraryEntry(title: url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_", with: " "),
                                 relativePath: relative, bits: 0)
         }
@@ -897,7 +912,7 @@ final class LibraryModel: ObservableObject {
         guard pe.count == 6, Array(pe.prefix(4)) == [0x50, 0x45, 0, 0] else { throw LibraryError.message("Missing PE header.") }
         let machine = Int(pe[4]) | Int(pe[5]) << 8
         guard machine == 0x14c || machine == 0x8664 else { throw LibraryError.message("Only x86 and x64 executables are supported.") }
-        let relative = String(url.resolvingSymlinksInPath().path.dropFirst(drive.path.count + 1))
+        let relative = driveRelativePath(url) ?? ""
         let name = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_", with: " ")
         var entry = LibraryEntry(title: name, relativePath: relative, bits: machine == 0x14c ? 32 : 64)
         entry.graphicsAPI = graphicsImports(url)
@@ -1261,7 +1276,7 @@ private actor LibraryMetadataScanner {
         let siblings = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
         var local: [String: URL] = [:]
         for file in siblings where file.pathExtension.lowercased() == "dll" {
-            if file.resolvingSymlinksInPath().path.hasPrefix(drive.path + "/") { local[file.lastPathComponent.lowercased()] = file }
+            if isInDrive(file) { local[file.lastPathComponent.lowercased()] = file }
         }
         var budget = 32 * 1024 * 1024
         var pending = [executable], visited = Set<String>(), apis = Set<String>()
@@ -1270,7 +1285,7 @@ private actor LibraryMetadataScanner {
         if LibraryModel.graphicsImports(executable) == nil {
             pending.insert(contentsOf: siblings.filter {
                 $0.pathExtension.lowercased() == "exe" && $0 != executable &&
-                $0.resolvingSymlinksInPath().path.hasPrefix(drive.path + "/")
+                isInDrive($0)
             }.sorted { $0.path < $1.path }.prefix(8), at: 0)
         }
         while let file = pending.popLast(), visited.count < 64, !Task.isCancelled {
@@ -2867,7 +2882,7 @@ struct ExecutableBrowser: View {
             do {
                 // ml1163: .bat and .cmd files are listed too (they run through cmd.exe).
                 files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
-                    .filter { ($0.hasDirectoryPath || LibraryModel.programExtensions.contains($0.pathExtension.lowercased())) && $0.resolvingSymlinksInPath().path.hasPrefix(LibraryModel.drive.path + "/") }
+                    .filter { ($0.hasDirectoryPath || LibraryModel.programExtensions.contains($0.pathExtension.lowercased())) && LibraryModel.isInDrive($0) }
                     .sorted { if $0.hasDirectoryPath != $1.hasDirectoryPath { return $0.hasDirectoryPath }; return $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             } catch { self.error = error.localizedDescription }
         }
