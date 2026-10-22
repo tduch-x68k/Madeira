@@ -3467,7 +3467,7 @@ struct ContentView: View {
             // a Reset takes out what they installed; the other games share those installs.
             DockInstallers.prepare(game, drive: MadeiraDock.drive, prefix: MadeiraDock.prefix,
                                    others: MadeiraDock.games(drive: MadeiraDock.drive))
-            DockInstallers.prepareGameServices(drive: MadeiraDock.drive)
+            DockInstallers.prepareGameServices(drive: MadeiraDock.drive, gameConfig: profile?.config)
             if DockInstallers.installsOnly {
                 // No host runs in this session: nothing will take the sign-in transfer.
                 MadeiraDock.cleanup()
