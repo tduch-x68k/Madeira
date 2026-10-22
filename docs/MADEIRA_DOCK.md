@@ -424,6 +424,7 @@ never asks. The preparation is Valve's; Dock does not touch the files.
 | `MADEIRA_DOCK_OFFLINE_LOGON` | on | `0`: no offline starts. The app never asks for one and hides the Game details mark; read by the host too, which then does not look up Valve's offline-logon methods |
 | `MADEIRA_DOCK_INSTALLERS` | on | `0`: no one-time installs (nothing read, run or shown) |
 | `MADEIRA_INSTALL_DEFAULT_KEY` | on | `0`: install-script entries without a `HasRunKey` are ignored |
+| `MADEIRA_DOCK_GAME_SERVICES` | off | `1`: a start that runs no installers first runs `dockhost.exe --start-services` (batch `C:\madeira-dock-services.cmd`), so Wine's service manager answers while the game runs; madsync is off for that session. For games whose launcher installs a Windows service, such as Rockstar's |
 | `MADEIRA_DOCK_INSTALL_CHOICE` | on | `0`: no per-game choice; every start runs whatever is pending |
 | `MADEIRA_DOCK_INSTALL_SCM` | on | `0`: the batch records "services off" instead of starting the service manager (also read by the host's `--start-services`) |
 | `MADEIRA_DOCK_INSTALL_SERVER_SYNC` | on | `0`: a start that runs installers keeps madsync and leaves the service step out |
