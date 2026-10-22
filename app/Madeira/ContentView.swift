@@ -3467,6 +3467,7 @@ struct ContentView: View {
             // a Reset takes out what they installed; the other games share those installs.
             DockInstallers.prepare(game, drive: MadeiraDock.drive, prefix: MadeiraDock.prefix,
                                    others: MadeiraDock.games(drive: MadeiraDock.drive))
+            DockInstallers.prepareGameServices(drive: MadeiraDock.drive)
             if DockInstallers.installsOnly {
                 // No host runs in this session: nothing will take the sign-in transfer.
                 MadeiraDock.cleanup()
@@ -3508,7 +3509,7 @@ struct ContentView: View {
                 width = size[0]; height = size[1]
             }
             setenv("MADEIRA_EXE", "explorer.exe", 1)
-            setenv("MADEIRA_ARGS", MadeiraDock.launchArguments(width: width, height: height, installers: DockInstallers.script,
+            setenv("MADEIRA_ARGS", MadeiraDock.launchArguments(width: width, height: height, installers: DockInstallers.script ?? DockInstallers.gameServicesScript,
                                                                host: !DockInstallers.installsOnly), 1)
             setenv("MADEIRA_DESKTOP", "1", 1)
             setenv("MADEIRA_SCREEN_W", String(width), 1)

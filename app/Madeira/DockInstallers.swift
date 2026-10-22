@@ -850,6 +850,35 @@ enum DockInstallers {
 
     // MARK: A start
 
+    /// madeira-bcd, opt-in (env.MADEIRA_DOCK_GAME_SERVICES = 1, default off): the batch a Dock start
+    /// without installers runs before the host so Wine's service manager answers while the game
+    /// runs (a C:\ path), nil when none runs. Rockstar's launcher installs and starts
+    /// RockstarService.exe through it and fails with RPC error 1722 when none answers, while the
+    /// Steam client it also needs runs only in a Dock session. Kept apart from `script`, which is
+    /// the one-time installs the Dock screens describe.
+    private(set) static var gameServicesScript: String?
+    static let gameServicesName = "madeira-dock-services.cmd"
+
+    /// Writes the services batch for a start that runs no installers. Like a start that runs
+    /// installers, it turns madsync off for its session: with madsync Wine's services.exe never
+    /// answered its RPC clients in the fork's device runs (see `serverSync`).
+    /// Does nothing unless the switch is on, `script` is nil and the host follows.
+    static func prepareGameServices(drive: URL) {
+        gameServicesScript = nil
+        let file = drive.appendingPathComponent(gameServicesName)
+        try? FileManager.default.removeItem(at: file)
+        guard script == nil, !installsOnly, SteamSignIn.flag("MADEIRA_DOCK_GAME_SERVICES", default: false) else { return }
+        let text = "@echo off\r\n\"" + MadeiraDock.executable + "\" --start-services\r\n"
+        do {
+            try Data(text.utf8).write(to: file, options: .atomic)
+            gameServicesScript = "C:\\" + gameServicesName
+            serverSync = true
+            LogStore.shared.log("[dock-installers] game-services=on: dockhost --start-services runs before the host; madsync off for this session")
+        } catch {
+            LogStore.shared.log("[dock-installers] game-services batch not written: \(error.localizedDescription)", level: .error)
+        }
+    }
+
     /// Called right before a Dock start, while no session runs (the registry is on disk).
     /// Records the previous batch's results, plans the game's programs and writes the batch.
     /// `others`: the prefix's other Dock games (a reset's shared installs, applyRequest).
