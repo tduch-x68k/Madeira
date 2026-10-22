@@ -871,7 +871,7 @@ final class LibraryModel: ObservableObject {
     /// installed on an external drive is a symbolic link inside drive_c (ExternalStorage),
     /// so the path is judged where it is listed, not where the link leads; a link leading
     /// elsewhere counts only when it leads into a "Madeira Games" folder.
-    static func driveRelativePath(_ url: URL) -> String? {
+    static func driveRelativePath(_ url: URL, drive: URL = LibraryModel.drive) -> String? {
         var listed = url.standardizedFileURL.path
         if listed.hasPrefix("/private/var/") { listed = String(listed.dropFirst("/private".count)) }
         var root = drive.path
@@ -881,7 +881,7 @@ final class LibraryModel: ObservableObject {
         guard listed.hasPrefix(root + "/"), resolved.split(separator: "/").contains(Substring(ExternalStorage.gamesFolderName)) else { return nil }
         return String(listed.dropFirst(root.count + 1))
     }
-    static func isInDrive(_ url: URL) -> Bool { driveRelativePath(url) != nil }
+    static func isInDrive(_ url: URL, drive: URL = LibraryModel.drive) -> Bool { driveRelativePath(url, drive: drive) != nil }
     static func executable(_ relative: String) throws -> URL {
         let url = drive.appendingPathComponent(relative).standardizedFileURL
         guard isInDrive(url), programExtensions.contains(url.pathExtension.lowercased()),
@@ -1276,7 +1276,7 @@ private actor LibraryMetadataScanner {
         let siblings = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
         var local: [String: URL] = [:]
         for file in siblings where file.pathExtension.lowercased() == "dll" {
-            if isInDrive(file) { local[file.lastPathComponent.lowercased()] = file }
+            if LibraryModel.isInDrive(file, drive: drive) { local[file.lastPathComponent.lowercased()] = file }
         }
         var budget = 32 * 1024 * 1024
         var pending = [executable], visited = Set<String>(), apis = Set<String>()
@@ -1285,7 +1285,7 @@ private actor LibraryMetadataScanner {
         if LibraryModel.graphicsImports(executable) == nil {
             pending.insert(contentsOf: siblings.filter {
                 $0.pathExtension.lowercased() == "exe" && $0 != executable &&
-                isInDrive($0)
+                LibraryModel.isInDrive($0, drive: drive)
             }.sorted { $0.path < $1.path }.prefix(8), at: 0)
         }
         while let file = pending.popLast(), visited.count < 64, !Task.isCancelled {
