@@ -862,12 +862,19 @@ enum DockInstallers {
     /// Writes the services batch for a start that runs no installers. Like a start that runs
     /// installers, it turns madsync off for its session: with madsync Wine's services.exe never
     /// answered its RPC clients in the fork's device runs (see `serverSync`).
-    /// Does nothing unless the switch is on, `script` is nil and the host follows.
-    static func prepareGameServices(drive: URL) {
+    /// Does nothing unless the switch is on (the game's own line wins over madeira.cfg's), `script` is nil
+    /// and the host follows.
+    static func prepareGameServices(drive: URL, gameConfig: String? = nil) {
         gameServicesScript = nil
         let file = drive.appendingPathComponent(gameServicesName)
         try? FileManager.default.removeItem(at: file)
-        guard script == nil, !installsOnly, SteamSignIn.flag("MADEIRA_DOCK_GAME_SERVICES", default: false) else { return }
+        // The game's own lines (This game's config) are not exported yet at this point of a
+        // start, so they are read from the entry's text; madeira.cfg's env line applies to every game.
+        let key = "env.MADEIRA_DOCK_GAME_SERVICES"
+        let own = MadeiraConfig.parse(gameConfig ?? "")[key]
+        let on = own.map { $0.trimmingCharacters(in: .whitespaces) != "0" && !$0.isEmpty }
+            ?? SteamSignIn.flag("MADEIRA_DOCK_GAME_SERVICES", default: false)
+        guard script == nil, !installsOnly, on else { return }
         let text = "@echo off\r\n\"" + MadeiraDock.executable + "\" --start-services\r\n"
         do {
             try Data(text.utf8).write(to: file, options: .atomic)
